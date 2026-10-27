@@ -1,0 +1,5 @@
+# Extras for the HTTP API + web UI (install on top of ../requirements.txt):
+#   pip install -r requirements-web.txt
+fastapi>=0.141
+uvicorn[standard]>=0.53
+python-multipart>=0.0.9

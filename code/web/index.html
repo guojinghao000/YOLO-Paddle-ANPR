@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="./车牌识别.svg">
+<title>ANPR · 车牌识别服务</title>
+<style>
+  :root {
+    --bg: #0b1220;
+    --panel: #111a2e;
+    --panel-2: #16213a;
+    --line: #243252;
+    --text: #e6edf7;
+    --muted: #8fa3c0;
+    --accent: #22c55e;
+    --accent-dim: #16a34a;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1200px 600px at 80% -10%, #15233f 0%, var(--bg) 55%);
+    color: var(--text);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    min-height: 100vh;
+  }
+  header.top {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 22px; border-bottom: 1px solid var(--line);
+    background: rgba(17, 26, 46, .7); backdrop-filter: blur(8px);
+    position: sticky; top: 0; z-index: 20;
+  }
+  header.top .logo { font-size: 22px; }
+  header.top h1 { font-size: 17px; font-weight: 600; letter-spacing: .5px; }
+  header.top .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .spacer { flex: 1; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--muted);
+    border: 1px solid var(--line); padding: 6px 12px; border-radius: 999px;
+    background: var(--panel); max-width: 46vw; overflow: hidden; white-space: nowrap;
+  }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); flex: none; }
+  .pill.ok .dot { background: var(--accent); box-shadow: 0 0 8px var(--accent-dim); }
+  .pill.bad .dot { background: var(--danger); }
+
+  main { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
+         gap: 16px; padding: 18px 22px; max-width: 1500px; margin: 0 auto; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+
+  .card { background: var(--panel); border: 1px solid var(--line);
+          border-radius: var(--radius); overflow: hidden; }
+  .card > .card-h { display: flex; align-items: center; gap: 10px;
+                    padding: 12px 16px; border-bottom: 1px solid var(--line);
+                    font-size: 13px; font-weight: 600; color: #cfe0f5; flex-wrap: wrap; }
+  .card .card-h .hint { margin-left: auto; font-weight: 400; color: var(--muted);
+                        font-size: 12px; }
+
+  /* ---- toolbar ---- */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px;
+             border-bottom: 1px solid var(--line); align-items: center; }
+  .btn {
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+    padding: 8px 14px; border-radius: 9px; font-size: 13px; cursor: pointer;
+    transition: .15s; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn:hover { border-color: #3b4d75; background: #1b2945; }
+  .btn.primary { background: var(--accent-dim); border-color: var(--accent-dim); color: #fff; font-weight: 600; }
+  .btn.primary:hover { background: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.small { padding: 5px 10px; font-size: 12px; }
+  .btn.ghost-danger:hover { border-color: var(--danger); color: var(--danger); }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 16px; padding: 10px 16px;
+              border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted);
+              align-items: center; }
+  .controls label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .controls input[type=range] { accent-color: var(--accent); }
+  .controls input[type=checkbox] { accent-color: var(--accent); }
+
+  /* ---- image area ---- */
+  .stage-wrap { position: relative; background: #0a0f1c; }
+  .stage { display: flex; align-items: center; justify-content: center;
+           min-height: 380px; max-height: 70vh; position: relative; }
+  .stage img, .stage video {
+    max-width: 100%; max-height: 70vh; display: none; object-fit: contain; }
+  .stage.show img.v-on, .stage.show video.v-on { display: block; }
+  .drop-hint {
+    position: absolute; inset: 14px; border: 2px dashed #31456e; border-radius: 12px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; color: var(--muted); font-size: 14px; text-align: center;
+    transition: .15s; cursor: pointer; background: rgba(17, 26, 46, .35);
+  }
+  .drop-hint .big { font-size: 40px; }
+  .drop-hint.drag { border-color: var(--accent); color: var(--accent);
+                    background: rgba(34, 197, 94, .08); }
+  .seg { display: inline-flex; gap: 2px; font-size: 12px; }
+  .seg button { border: none; background: var(--panel-2); color: var(--muted);
+                padding: 6px 14px; cursor: pointer; }
+  .seg button:first-child { border-radius: 8px 0 0 8px; }
+  .seg button:last-child { border-radius: 0 8px 8px 0; }
+  .seg button.on { background: var(--accent-dim); color: #fff; }
+  .stage-actions { display: flex; justify-content: space-between; align-items: center;
+                   gap: 8px; padding: 8px 14px; border-top: 1px solid var(--line);
+                   font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .badge { padding: 3px 9px; border-radius: 999px; background: var(--panel-2);
+           border: 1px solid var(--line); }
+
+  .busy { position: absolute; inset: 0; background: rgba(6, 10, 20, .72);
+          display: none; align-items: center; justify-content: center;
+          flex-direction: column; gap: 14px; z-index: 5; }
+  .busy.on { display: flex; }
+  .spinner { width: 40px; height: 40px; border-radius: 50%;
+             border: 4px solid #26334f; border-top-color: var(--accent);
+             animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---- history ---- */
+  .history { display: flex; flex-direction: column; gap: 10px; padding: 12px;
+             max-height: 76vh; overflow-y: auto; }
+  .hist-empty { color: var(--muted); text-align: center; padding: 30px 10px;
+                font-size: 13px; line-height: 1.9; }
+  .plate-card { background: var(--panel-2); border: 1px solid var(--line);
+                border-radius: 12px; padding: 12px; animation: pop .18s ease-out; }
+  @keyframes pop { from { opacity: 0; transform: translateY(-6px); } }
+  .plate-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .plate-text { font-size: 26px; font-weight: 700; letter-spacing: 2px; }
+  .plate-text .prov { color: #4ade80; }
+  .plate-text.invalid { color: var(--warn); font-size: 20px; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px;
+         border: 1px solid var(--line); color: var(--muted); cursor: default; }
+  .tag.valid { color: #4ade80; border-color: #166534; }
+  .tag.invalid { color: var(--warn); border-color: #7c5509; }
+  .tag.copy { cursor: pointer; }
+  .tag.copy:hover { border-color: var(--accent); color: var(--accent); }
+  .conf-row { display: flex; gap: 16px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .conf { flex: 1; }
+  .bar { height: 5px; background: #0d1526; border-radius: 4px; margin-top: 3px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+  .bar.det i { background: #38bdf8; }
+  .meta { display: flex; gap: 8px; align-items: center; margin-top: 8px;
+          font-size: 11px; color: var(--muted); flex-wrap: wrap; }
+  .timing-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+                font-size: 11px; color: var(--muted); }
+  .timing-row .t { border: 1px solid var(--line); background: #0f1830;
+                   border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+  .timing-row .t b { color: var(--text); font-weight: 600; }
+  .timing-row .t.yolo b { color: #38bdf8; }
+  .timing-row .t.ocr b { color: var(--accent); }
+  .meta .time { margin-left: auto; }
+  .crop-row { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 8px; }
+  .crop-row img { border-radius: 8px; max-height: 88px; border: 1px solid var(--line); }
+  .ocr-note { margin-top: 8px; font-size: 11px; color: var(--danger); word-break: break-all;
+              border: 1px solid #4c2333; background: #2a1420; border-radius: 8px; padding: 6px 8px; }
+  .empty-note { color: var(--muted); text-align: center; padding: 16px; font-size: 13px;
+                border: 1px dashed var(--line); border-radius: 10px; }
+
+  #toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(80px);
+           background: #1c2a47; color: var(--text); padding: 10px 18px; border-radius: 10px;
+           border: 1px solid var(--line); font-size: 13px; opacity: 0; transition: .25s;
+           z-index: 60; max-width: 82vw; }
+  #toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.err { border-color: var(--danger); }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="logo">🚗</div>
+  <div>
+    <h1>ANPR 车牌识别服务</h1>
+    <div class="sub">YOLO 检测 · PaddleOCR 识别</div>
+  </div>
+  <div class="spacer"></div>
+  <div id="health" class="pill"><span class="dot"></span><span>连接中…</span></div>
+</header>
+
+<main>
+  <!-- ============ left: input / stage ============ -->
+  <section class="card">
+    <div class="card-h">🖼 图像输入 <span class="hint" id="img-info"></span></div>
+
+    <div class="toolbar">
+      <button class="btn" id="btn-file">📁 选择图片</button>
+      <button class="btn" id="btn-camera">📷 拍照</button>
+      <button class="btn" id="btn-demo">🧪 示例图片</button>
+      <button class="btn" id="btn-clear">🗑 清空</button>
+      <span style="flex:1"></span>
+      <button class="btn primary" id="btn-run">▶ 开始识别</button>
+      <input type="file" id="file-input" accept="image/*" hidden>
+    </div>
+
+    <div class="controls">
+      <label>置信度阈值
+        <input type="range" id="conf" min="0.05" max="0.95" step="0.05" value="0.5">
+        <b id="conf-val" style="color:var(--text)">0.50</b>
+      </label>
+      <label title="在结果卡片中显示车牌裁剪图"><input type="checkbox" id="crop-chk"> 车牌裁剪图</label>
+      <label title="开启摄像头后每隔约 1.6 秒自动识别一帧"><input type="checkbox" id="stream-chk" disabled> 视频连续识别</label>
+    </div>
+
+    <div class="stage-wrap">
+      <div class="stage" id="stage">
+        <div class="drop-hint" id="drop-hint">
+          <div class="big">🖼</div>
+          <div><b>拖拽图片到这里</b> 或点击选择<br>支持粘贴 (Ctrl+V) 与手机拍照上传</div>
+        </div>
+        <img id="img-orig" alt="原图">
+        <img id="img-annot" alt="标注图">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="snap" hidden></canvas>
+        <div class="busy" id="busy">
+          <div class="spinner"></div>
+          <div id="busy-text">识别中…</div>
+        </div>
+      </div>
+      <div class="stage-actions">
+        <div class="seg" id="view-seg" style="display:none">
+          <button data-view="annot" class="on">标注结果</button>
+          <button data-view="orig">原图</button>
+        </div>
+        <div class="badge" id="stage-badge"></div>
+        <button class="btn small ghost-danger" id="btn-stop-cam" style="display:none">■ 停止摄像头</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ right: results ============ -->
+  <aside class="card">
+    <div class="card-h">📋 识别结果 <span class="hint" id="result-count"></span>
+      <button class="btn small" id="btn-clr-hist">清空</button>
+    </div>
+    <div class="history" id="history">
+      <div class="hist-empty" id="hist-empty">
+        暂无识别记录<br>上传图片后点击「开始识别」，<br>或按 Ctrl+V 直接粘贴截图
+      </div>
+    </div>
+  </aside>
+</main>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const el = {
+  fileInput: $("#file-input"), imgOrig: $("#img-orig"), imgAnnot: $("#img-annot"),
+  video: $("#video"), snap: $("#snap"), stage: $("#stage"), dropHint: $("#drop-hint"),
+  busy: $("#busy"), busyText: $("#busy-text"), health: $("#health"),
+  conf: $("#conf"), confVal: $("#conf-val"), cropChk: $("#crop-chk"),
+  streamChk: $("#stream-chk"), history: $("#history"), histEmpty: $("#hist-empty"),
+  resultCount: $("#result-count"), imgInfo: $("#img-info"), stageBadge: $("#stage-badge"),
+  viewSeg: $("#view-seg"), btnStopCam: $("#btn-stop-cam"),
+};
+const state = {
+  file: null,               // current File (uploaded / pasted / latest camera frame)
+  origUrl: null,
+  cameraOn: false, streamTimer: null, busyInfer: false,
+  view: "annot", historyRuns: 0,
+};
+
+/* ---------------- tiny helpers ---------------- */
+function toast(msg, err) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.className = err ? "on err" : "on";
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), 2800);
+}
+function fmtMs(ms) {
+  return ms == null ? "—" : ms < 1000 ? ms.toFixed(0) + " ms" : (ms / 1000).toFixed(2) + " s";
+}
+function setBusy(on, text) {
+  state.busyInfer = on;
+  $("#btn-run").disabled = on;
+  el.busyText.textContent = text || "识别中…";
+  el.busy.classList.toggle("on", on);
+}
+function setSeg() {
+  document.querySelectorAll("#view-seg button").forEach(b =>
+      b.classList.toggle("on", b.dataset.view === state.view));
+}
+
+/* ---------------- stage display model ----------------
+   Two mutually exclusive modes:
+     * file/image mode: show img-orig / img-annot depending on state.view
+     * live camera mode: only <video> is shown (state.cameraOn)
+*/
+function stageShowImages() {
+  el.video.classList.remove("v-on");
+  el.dropHint.style.display = "none";
+  el.imgOrig.classList.toggle("v-on", state.view === "orig");
+  el.imgAnnot.classList.toggle("v-on", state.view === "annot");
+  el.stage.classList.add("show");
+  el.viewSeg.style.display = "flex";
+}
+function stageShowVideo() {
+  el.imgOrig.classList.remove("v-on");
+  el.imgAnnot.classList.remove("v-on");
+  el.video.classList.add("v-on");
+  el.dropHint.style.display = "none";
+  el.stage.classList.add("show");
+  el.viewSeg.style.display = "none";
+  setSeg();
+}
+function setView(v) {
+  state.view = v;
+  if (state.cameraOn) { setSeg(); return; }   // live camera: keep video
+  stageShowImages();
+  setSeg();
+}
+function resetStage() {
+  state.file = null; el.fileInput.value = "";
+  stopCamera();
+  el.imgOrig.removeAttribute("src"); el.imgOrig.classList.remove("v-on");
+  el.imgAnnot.removeAttribute("src"); el.imgAnnot.classList.remove("v-on");
+  el.video.classList.remove("v-on");
+  el.stage.classList.remove("show");
+  el.dropHint.style.display = "";
+  el.viewSeg.style.display = "none";
+  el.imgInfo.textContent = "";
+  el.stageBadge.textContent = "";
+}
+
+/* ---------------- loading a file ---------------- */
+function showFile(f) {
+  state.file = f;
+  stopCamera();
+  if (state.origUrl) URL.revokeObjectURL(state.origUrl);
+  state.origUrl = URL.createObjectURL(f);
+  el.imgOrig.src = state.origUrl;
+  el.imgAnnot.removeAttribute("src");
+  state.view = "orig";
+  stageShowImages(); setSeg();
+  el.imgInfo.textContent = `${f.name || "pasted"} · ${(f.size / 1024).toFixed(0)} KB`;
+  el.stageBadge.textContent = "已载入，点击「开始识别」";
+}
+
+/* ---------------- camera ---------------- */
+async function openCamera() {
+  if (state.cameraOn) return;
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error("当前浏览器不支持摄像头（需 HTTPS / localhost）");
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment", width: { ideal: 1280 } }, audio: false });
+    el.video.srcObject = stream;
+    state.cameraOn = true;
+    stageShowVideo();
+    el.btnStopCam.style.display = "";
+    el.streamChk.disabled = false;
+    el.stageBadge.textContent = "📷 摄像头已开启：点击「开始识别」抓帧，或勾选「视频连续识别」";
+    $("#btn-camera").textContent = "📷 重开";
+  } catch (e) {
+    toast("无法打开摄像头: " + (e && e.message ? e.message : e), true);
+  }
+}
+function stopCamera() {
+  if (el.video.srcObject) {
+    try { el.video.srcObject.getTracks().forEach(t => t.stop()); } catch (e) { /* noop */ }
+    el.video.srcObject = null;
+  }
+  state.cameraOn = false;
+  if (state.streamTimer) { clearInterval(state.streamTimer); state.streamTimer = null; }
+  el.streamChk.checked = false;
+  el.streamChk.disabled = true;
+  el.btnStopCam.style.display = "none";
+  $("#btn-camera").textContent = "📷 拍照";
+  el.video.classList.remove("v-on");
+}
+function grabFrameFile() {
+  const w = el.video.videoWidth, h = el.video.videoHeight;
+  if (!w || !h) return Promise.resolve(null);
+  el.snap.width = w; el.snap.height = h;
+  el.snap.getContext("2d").drawImage(el.video, 0, 0, w, h);
+  return new Promise(res =>
+      el.snap.toBlob(b => res(b ? new File([b], "camera.jpg", { type: "image/jpeg" })
+                                : null), "image/jpeg", 0.92));
+}
+function adoptCameraFrame(f) {
+  // single-shot photo: treat the frame like an uploaded file
+  stopCamera();
+  state.file = f;
+  if (state.origUrl) URL.revokeObjectURL(state.origUrl);
+  state.origUrl = URL.createObjectURL(f);
+  el.imgOrig.src = state.origUrl;
+  el.imgAnnot.removeAttribute("src");
+  state.view = "orig";
+  stageShowImages(); setSeg();
+  el.imgInfo.textContent = `摄像头抓帧 · ${(f.size / 1024).toFixed(0)} KB`;
+}
+
+/* ---------------- recognition ---------------- */
+async function postRecognize(form) {
+  const resp = await fetch("/api/recognize", { method: "POST", body: form });
+  let data = {};
+  try { data = await resp.json(); } catch (e) { /* non-JSON error below */ }
+  if (!resp.ok) {
+    const d = data.detail;
+    const msg = (d && typeof d === "string") ? d
+              : (d && d.error) ? d.error
+              : (d && d.reason) ? d.reason
+              : (d ? JSON.stringify(d) : `HTTP ${resp.status}`);
+    throw new Error(msg);
+  }
+  return data;
+}
+
+async function runRecognize() {
+  if (state.busyInfer) return;
+  let file = state.file;
+  if (state.cameraOn) {
+    const frame = await grabFrameFile();
+    if (!frame) { toast("无法抓取摄像头画面", true); return; }
+    file = frame;
+    if (!el.streamChk.checked) adoptCameraFrame(file); // stop cam, show frame
+  }
+  if (!file) { toast("请先选择 / 拍摄一张图片", true); return; }
+
+  const form = new FormData();
+  form.append("file", file, file.name || "image.jpg");
+  form.append("conf", String(parseFloat(el.conf.value)));
+  form.append("annotate", el.streamChk.checked && state.cameraOn ? "false" : "true");
+  form.append("crops", el.cropChk.checked ? "true" : "false");
+
+  setBusy(true, "识别中…");
+  try {
+    const data = await postRecognize(form);
+    renderResult(data);
+  } catch (e) {
+    toast("识别失败: " + e.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function renderResult(data) {
+  // annotated image / stage state
+  if (data.annotated_image) {
+    el.imgAnnot.src = data.annotated_image;
+    if (!(state.cameraOn && el.streamChk.checked)) { state.view = "annot"; stageShowImages(); }
+  }
+  if (!state.cameraOn) stageShowImages();
+
+  const tm = data.timings_ms || {};
+  const total = tm.request_ms != null ? tm.request_ms : tm.total_ms;
+  el.stageBadge.textContent =
+      `检测到 ${data.count} 个车牌 · YOLO检测 ${fmtMs(tm.detect_ms)} · ` +
+      `OCR识别 ${fmtMs(tm.ocr_total_ms)} · 合计 ${fmtMs(total)}` +
+      (data.source ? ` · ${data.source}` : "");
+
+  // result cards
+  el.histEmpty.style.display = "none";
+  const group = document.createElement("div");
+  group.style.cssText = "display:flex;flex-direction:column;gap:10px;";
+  group.appendChild(timingRow(data));
+  (data.plates || []).forEach(p => group.appendChild(plateCard(p)));
+  if (!data.plates || !data.plates.length) {
+    const none = document.createElement("div");
+    none.className = "empty-note";
+    none.textContent = "未检测到车牌 —— 可降低置信度阈值后重试。";
+    group.appendChild(none);
+  }
+  el.history.prepend(group);
+  while (el.history.children.length > 50) el.history.removeChild(el.history.lastChild);
+  el.resultCount.textContent = `已运行 ${++state.historyRuns} 次`;
+}
+
+/* 本次请求的分段耗时：YOLO 检测 / OCR 识别 / 合计 */
+function timingRow(data) {
+  const tm = data.timings_ms || {};
+  const total = tm.request_ms != null ? tm.request_ms : tm.total_ms;
+  const row = document.createElement("div");
+  row.className = "timing-row";
+  const chips = [
+    ["yolo", "YOLO 检测", tm.detect_ms],
+    ["ocr", "OCR 识别", tm.ocr_total_ms],
+    ["", "合计", total],
+    ["", "车牌数", data.count, true],
+  ];
+  chips.forEach(([cls, label, value, raw]) => {
+    if (value == null) return;
+    const s = document.createElement("span");
+    s.className = "t" + (cls ? " " + cls : "");
+    s.innerHTML = `${esc(label)} <b>${raw ? value : fmtMs(value)}</b>`;
+    row.appendChild(s);
+  });
+  const time = document.createElement("span");
+  time.className = "t";
+  time.textContent = new Date().toLocaleTimeString();
+  row.appendChild(time);
+  return row;
+}
+
+function plateCard(p) {
+  const div = document.createElement("div");
+  div.className = "plate-card";
+
+  const head = document.createElement("div");
+  head.className = "plate-head";
+  const txt = document.createElement("span");
+  const plate = p.plate || p.raw_text || "未识别";
+  if (p.plate) {
+    txt.className = "plate-text";
+    txt.innerHTML = `<span class="prov">${esc(p.plate[0])}</span>${esc(p.plate.slice(1))}`;
+  } else {
+    txt.className = "plate-text invalid";
+    txt.textContent = p.raw_text ? `原文：${p.raw_text}` : "未能识别字符";
+  }
+  const tag = document.createElement("span");
+  tag.className = "tag " + (p.valid ? "valid" : "invalid");
+  tag.textContent = p.valid ? "标准车牌" : (p.plate ? "格式异常" : "无结果");
+  const copy = document.createElement("span");
+  copy.className = "tag copy";
+  copy.textContent = "⧉ 复制";
+  copy.onclick = () => {
+    if (!navigator.clipboard) { toast("浏览器不支持剪贴板", true); return; }
+    navigator.clipboard.writeText(plate).then(() => toast(`已复制 ${plate}`))
+      .catch(() => toast("复制失败", true));
+  };
+  head.append(txt, tag, copy);
+  div.appendChild(head);
+
+  const confs = document.createElement("div");
+  confs.className = "conf-row";
+  confs.innerHTML =
+    `<div class="conf"><span>识别置信度 ${(p.rec_conf * 100).toFixed(0)}%</span>
+       <div class="bar"><i style="width:${(p.rec_conf * 100).toFixed(0)}%"></i></div></div>` +
+    `<div class="conf"><span>检测置信度 ${(p.det_conf * 100).toFixed(0)}%</span>
+       <div class="bar det"><i style="width:${(p.det_conf * 100).toFixed(0)}%"></i></div></div>`;
+  div.appendChild(confs);
+
+  const b = p.bbox || [];
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.innerHTML =
+    `<span>位置 x:${b[0]} y:${b[1]} w:${b[2] - b[0]} h:${b[3] - b[1]}</span>` +
+    (p.ocr_ms != null ? `<span>OCR ${fmtMs(p.ocr_ms)}</span>` : "") +
+    `<span class="time">${new Date().toLocaleTimeString()}</span>`;
+  div.appendChild(meta);
+
+  if (p.ocr_error || (!p.valid && !p.raw_text)) {
+    const note = document.createElement("div");
+    note.className = "ocr-note";
+    note.textContent = p.ocr_error
+        ? "OCR 异常：" + p.ocr_error
+        : (p.ocr_ok === false ? "OCR 未返回任何字符" : "OCR 未识别出字符");
+    div.appendChild(note);
+  }
+
+  if (p.crop) {
+    const row = document.createElement("div");
+    row.className = "crop-row";
+    const img = document.createElement("img");
+    img.src = p.crop; img.alt = "plate crop";
+    row.appendChild(img);
+    div.appendChild(row);
+  }
+  return div;
+}
+function esc(s) { return String(s).replace(/[&<>"']/g,
+    c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+/* ---------------- demo ---------------- */
+async function runDemo() {
+  setBusy(true, "示例识别中…");
+  try {
+    const conf = parseFloat(el.conf.value);
+    const resp = await fetch(
+      `/api/demo?conf=${conf}&annotate=true&crops=${el.cropChk.checked}`);
+    let data = {}; try { data = await resp.json(); } catch (e) { /* noop */ }
+    if (!resp.ok) throw new Error((typeof data.detail === "string")
+        ? data.detail : `HTTP ${resp.status}`);
+    state.file = null;            // result refers to a server-side sample
+    renderResult(data);
+    toast(`示例 ${data.source || ""} 识别完成`);
+  } catch (e) { toast("示例识别失败: " + e.message, true); }
+  finally { setBusy(false); }
+}
+
+/* ---------------- health ---------------- */
+async function pingHealth() {
+  try {
+    const r = await fetch("/api/health");
+    const d = await r.json();
+    const eng = d.engine || {};
+    el.health.classList.toggle("ok", !!eng.loaded);
+    el.health.classList.toggle("bad", !!eng.error);
+    const stateLabel = eng.loaded ? "模型就绪" : (eng.error ? "模型加载失败" : "未加载");
+    const engName = eng.engine || "paddle";
+    const dev = eng.yolo_device || eng.ocr_device || eng.device || "auto";
+    el.health.querySelector("span:last-child").textContent =
+        `${stateLabel} · ${engName}@${dev}`;
+    const tip = [];
+    if (eng.yolo_weights) tip.push("YOLO: " + eng.yolo_weights);
+    if (eng.rec_model_dir) tip.push("paddle rec: " + eng.rec_model_dir);
+    else if (eng.ocr_name) tip.push("rec: official " + eng.ocr_name);
+    if (eng.error) tip.push("错误: " + eng.error);
+    (eng.notes || []).forEach(n => tip.push("提示: " + n));
+    el.health.title = tip.join("\n");
+    return true;
+  } catch (e) {
+    el.health.classList.remove("ok"); el.health.classList.remove("bad");
+    el.health.querySelector("span:last-child").textContent = "服务未连接";
+    return false;
+  }
+}
+
+/* ---------------- wiring ---------------- */
+$("#btn-file").onclick = () => el.fileInput.click();
+el.fileInput.onchange = () => {
+  const f = el.fileInput.files[0];
+  if (f) { showFile(f); runRecognize(); }     // 选图即识别
+};
+$("#btn-run").onclick = () => {
+  if (state.file || state.cameraOn) { runRecognize(); }
+  else { toast("请先选择一张本地图片", false); el.fileInput.click(); }
+};
+$("#btn-clear").onclick = resetStage;
+$("#btn-clr-hist").onclick = () => {
+  el.history.innerHTML = ""; el.histEmpty.style.display = "";
+  state.historyRuns = 0; el.resultCount.textContent = "";
+};
+$("#btn-camera").onclick = openCamera;
+$("#btn-stop-cam").onclick = () => {
+  stopCamera();
+  if (state.file) { state.view = "orig"; stageShowImages(); }
+  else {
+    el.stage.classList.remove("show");
+    el.dropHint.style.display = "";
+    el.viewSeg.style.display = "none";
+  }
+};
+$("#btn-demo").onclick = runDemo;
+
+// click on the empty drop hint opens the file picker
+el.dropHint.onclick = () => el.fileInput.click();
+["dragenter", "dragover"].forEach(ev => el.stage.addEventListener(ev, e => {
+  e.preventDefault(); el.dropHint.classList.add("drag"); }));
+["dragleave", "drop"].forEach(ev => el.stage.addEventListener(ev, e => {
+  e.preventDefault(); el.dropHint.classList.remove("drag"); }));
+el.stage.addEventListener("drop", e => {
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f && f.type.startsWith("image/")) { showFile(f); runRecognize(); }
+  else if (f) toast("请拖入图片文件", true);
+});
+document.addEventListener("paste", e => {
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  const item = [...items].find(i => i.type && i.type.startsWith("image/"));
+  if (!item) return;
+  const f = item.getAsFile();
+  if (f) { showFile(f); toast("已粘贴图片"); runRecognize(); }
+});
+
+// view switch (file mode only)
+document.querySelectorAll("#view-seg button").forEach(b =>
+  b.onclick = () => { if (!state.cameraOn) setView(b.dataset.view); });
+
+el.conf.oninput = () => el.confVal.textContent = parseFloat(el.conf.value).toFixed(2);
+
+// continuous video recognition
+el.streamChk.onchange = async () => {
+  if (!el.streamChk.checked) {
+    if (state.streamTimer) { clearInterval(state.streamTimer); state.streamTimer = null; }
+    toast("连续识别已停止");
+    return;
+  }
+  if (!state.cameraOn) await openCamera();
+  if (!state.cameraOn) { el.streamChk.checked = false; return; }
+  toast("连续识别开启（约 1.6s / 帧）");
+  state.streamTimer = setInterval(async () => {
+    if (state.busyInfer || !state.cameraOn) return;
+    const frame = await grabFrameFile();
+    if (!frame) return;
+    const form = new FormData();
+    form.append("file", frame, "frame.jpg");
+    form.append("conf", String(parseFloat(el.conf.value)));
+    form.append("annotate", "false");
+    form.append("crops", el.cropChk.checked ? "true" : "false");
+    try {
+      const data = await postRecognize(form);
+      renderResult(data);
+    } catch (err) { /* keep streaming; ignore single-frame errors */ }
+  }, 1600);
+};
+
+window.addEventListener("beforeunload", () => {
+  if (el.video.srcObject) { try { el.video.srcObject.getTracks().forEach(t => t.stop()); } catch (e) {} }
+});
+
+// boot
+el.conf.dispatchEvent(new Event("input"));
+pingHealth();
+setInterval(pingHealth, 5000);
+
+// surface silent JS errors instead of "no reaction"
+window.addEventListener("error", e => toast("页面脚本错误: " + (e.message || e.type), true));
+window.addEventListener("unhandledrejection", e => {
+  const r = e.reason;
+  toast("请求异常: " + (r && (r.message || r.status || String(r))), true);
+});
+</script>
+</body>
+</html>

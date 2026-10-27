@@ -1,0 +1,26 @@
+# Local datasets and generated image lists
+/CCPD2019/
+/dataset/
+/rec_data_plate/
+/rec_data_preview/
+/train_data/
+/ocr_rec_dataset_examples.tar
+
+# Training output, evaluation dumps, and model checkpoints
+/runs/
+/code/output/
+/code/output_plate/
+/code/eval_reports/
+/PP-OCRv6_small_rec_pretrained.pdparams
+*.pdopt
+*.pdparams
+*.pdiparams
+*.states
+*.log
+
+# Local caches and temporary work
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+/.doc-work/
