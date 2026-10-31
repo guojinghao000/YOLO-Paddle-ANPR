@@ -15,6 +15,7 @@
 *.pdopt
 *.pdparams
 *.pdiparams
+!/models/recognition/inference.pdiparams
 *.states
 *.log
 

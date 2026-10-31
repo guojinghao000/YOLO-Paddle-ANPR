@@ -245,6 +245,9 @@ class ANPREngine:
         env = os.environ.get("ANPR_YOLO_WEIGHTS")
         if env:
             return Path(env)
+        bundled = PROJECT_ROOT / "models" / "detection" / "best.pt"
+        if bundled.exists():
+            return bundled
         return PROJECT_ROOT / "runs" / "ccpd_yolo" / "weights" / "best.pt"
 
     @staticmethod

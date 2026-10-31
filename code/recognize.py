@@ -20,14 +20,14 @@ import numpy as np
 
 from anpr_engine import ANPREngine, PROJECT_ROOT, REC_MODEL_NAMES
 
-DEFAULT_WEIGHTS = PROJECT_ROOT / "runs" / "ccpd_yolo" / "weights" / "best.pt"
+DEFAULT_WEIGHTS = PROJECT_ROOT / "models" / "detection" / "best.pt"
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="License plate detection (YOLO) + recognition (PaddleOCR)")
     parser.add_argument("--source", type=str, required=True, help="input image path")
-    parser.add_argument("--weights", type=str, default=str(DEFAULT_WEIGHTS),
+    parser.add_argument("--weights", type=str, default=None,
                         help="YOLO weights path")
     parser.add_argument("--ocr-version", type=str, default="PP-OCRv6_small",
                         choices=list(REC_MODEL_NAMES),
@@ -60,7 +60,7 @@ def main():
     source = Path(args.source)
     if not source.exists():
         raise FileNotFoundError(f"Image not found: {source}")
-    weights = Path(args.weights)
+    weights = Path(args.weights) if args.weights else ANPREngine._default_yolo_weights()
     if not weights.exists():
         raise FileNotFoundError(f"YOLO weights not found: {weights}")
 

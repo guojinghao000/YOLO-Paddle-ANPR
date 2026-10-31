@@ -13,7 +13,7 @@ setlocal
 set "ROOT=%~dp0"
 set "PY_REC=E:\CondaEnvs\anpr-ocr\python.exe"
 set "PY_API=E:\CondaEnvs\ML\python.exe"
-set "REC_MODEL_DIR=%ROOT%code\output_plate\inference"
+set "REC_MODEL_DIR=%ROOT%models\recognition"
 set "REC_URL=http://127.0.0.1:8100"
 set "API_PORT=8000"
 
@@ -35,9 +35,7 @@ if not exist "%PY_API%" (
 )
 if not exist "%REC_MODEL_DIR%\inference.json" (
   echo [ERROR] fine-tuned PIR model not found in %REC_MODEL_DIR%
-  echo         export it first:
-  echo             cd code
-  echo             "%PY_REC%" train_ocr.py --export-only
+  echo         restore the model files from the repository, or export and copy them here.
   pause & exit /b 1
 )
 

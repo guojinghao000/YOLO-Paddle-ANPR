@@ -15,7 +15,7 @@ POST /api/rec  -> {"images": ["<base64 jpg>", ...], "batch": true}
 Run
 ---
     E:\\CondaEnvs\\anpr-ocr\\python.exe rec_service.py \
-        --model-dir code\\output_plate\\inference --port 8100
+        --model-dir models\\recognition --port 8100
 
 Env overrides: REC_MODEL_DIR, REC_MODEL_NAME, REC_ENGINE, REC_DEVICE,
 REC_HOST, REC_PORT, REC_MKLDNN, REC_WARMUP.
@@ -227,7 +227,7 @@ def build_app(model: RecModel):
 def main():
     ap = argparse.ArgumentParser(description="ANPR plate recognition service")
     ap.add_argument("--model-dir", default=os.environ.get("REC_MODEL_DIR")
-                    or str(BASE_DIR / "output_plate" / "inference"))
+                    or str(BASE_DIR.parent / "models" / "recognition"))
     ap.add_argument("--model-name", default=os.environ.get("REC_MODEL_NAME")
                     or "PP-OCRv6_small_rec")
     ap.add_argument("--engine", default=os.environ.get("REC_ENGINE") or "paddle",

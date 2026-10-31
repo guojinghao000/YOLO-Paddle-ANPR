@@ -1,6 +1,17 @@
 # YOLO-Paddle-ANPR · 车牌检测 + 识别
 
-车牌**检测**（YOLO，在 CCPD2019 上微调）→ 车牌**识别**（PaddleOCR 官方预训练 `PP-OCRv6_small_rec`，不做二次训练）。
+车牌检测与识别系统：YOLO 定位车牌，PaddleOCR `PP-OCRv6_small_rec` 识别字符。两者均已在 CCPD2019 上微调，支持 Web 界面、HTTP API 和单图命令行。
+
+仓库包含部署所需的检测权重和识别模型。数据集、训练中间产物及评测明细不纳入版本控制。
+
+| 文件 | 用途 |
+| --- | --- |
+| `models/detection/best.pt` | 微调后的 YOLO 检测权重 |
+| `models/recognition/inference.json` | 识别模型 PIR 结构 |
+| `models/recognition/inference.pdiparams` | 微调后的识别权重 |
+| `models/recognition/inference.yml` | PaddleX 识别配置及字表 |
+
+识别模型为 Paddle PIR 格式，需使用 `paddle` 引擎；Windows 双服务部署可同时使用 GPU YOLO 和该模型。以下单进程快速开始默认使用官方 `transformers` 识别模型，使用本仓库的微调识别模型请按[双服务部署](#61-上线拆成双服务推荐做法)启动。
 
 ```
 图像/视频帧 ─▶ YOLO 检测车牌框 ─▶ 裁剪(+5% 边距) ─▶ PaddleOCR 识别字符 ─▶ 字符规整/校验 ─▶ 车牌文本
@@ -37,7 +48,7 @@ python api_server.py --host 127.0.0.1 --port 8000
 
 | 模型 | 定位顺序 |
 | --- | --- |
-| YOLO | `ANPR_YOLO_WEIGHTS` → `runs/ccpd_yolo/weights/best.pt` |
+| YOLO | `ANPR_YOLO_WEIGHTS` → `models/detection/best.pt` → `runs/ccpd_yolo/weights/best.pt`（前者不存在时） |
 | 识别 | `ANPR_REC_MODEL_DIR` → `code/output/inference` → `code/output/best_accuracy/inference` → `code/output/latest/inference` → 官方预训练 `PP-OCRv6_small_rec` |
 
 > `--host 127.0.0.1:8000` 这种「host 带端口」的写法也兼容（会自动拆分并告警）。
@@ -72,7 +83,7 @@ Saved annotated image to: img_result.jpg
 | 参数 | 说明 |
 | --- | --- |
 | `--source` | 输入图片路径（必填） |
-| `--weights` | YOLO 权重，默认 `runs/ccpd_yolo/weights/best.pt` |
+| `--weights` | YOLO 权重，默认按上表自动定位 |
 | `--ocr-version` | `PP-OCRv3/v4/v5/v6/PP-OCRv6_small`（见 `REC_MODEL_NAMES`） |
 | `--rec-model-dir` | 自定义识别模型目录（PaddleX/PaddleOCR 推理导出：`inference.json` + `inference.pdiparams`；需与 `--ocr-version` 匹配，如 `PP-OCRv6_small`）。不指定则用官方预训练模型 |
 | `--conf` | 检测置信度阈值，默认 0.5 |
@@ -142,7 +153,7 @@ curl -X POST http://127.0.0.1:8000/api/recognize \
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
 | `ANPR_HOST` / `ANPR_PORT` | `127.0.0.1` / `8000` | 监听地址 |
-| `ANPR_YOLO_WEIGHTS` | `runs/ccpd_yolo/weights/best.pt` | YOLO 权重 |
+| `ANPR_YOLO_WEIGHTS` | `models/detection/best.pt` | YOLO 权重，可由环境变量覆盖 |
 | `ANPR_REC_MODEL_DIR` | 自动探测 `code/output/*/inference` | 自定义识别模型目录（PaddleX/PaddleOCR 推理导出）；留空则用官方预训练模型 |
 | `ANPR_OCR_VERSION` | `PP-OCRv6_small` | 识别模型版本（见 `REC_MODEL_NAMES`） |
 | `ANPR_DEVICE` | `gpu`（服务）/ 自动（CLI） | 设备：`cpu` / `gpu` / `gpu:0` / `0` |
@@ -184,7 +195,7 @@ python api_server.py --host 127.0.0.1 --port 8000 --engine transformers --device
 
 ## 6. 识别模型微调（CCPD 车牌）
 
-线上识别用官方 `PP-OCRv6_small_rec`，在 CCPD 车牌裁剪上整牌全对率只有 **29.73%**
+官方 `PP-OCRv6_small_rec` 在 CCPD 车牌裁剪上整牌全对率为 **29.73%**
 （清晰子集 58.9%，blur / tilt / rotate 均不足 2%）。微调在 `anpr-ocr` 环境里做
 （CUDA paddle、无 torch，因此没有 DLL 冲突）。
 
@@ -231,14 +242,13 @@ python verify_rec_plate.py --dataset ..\rec_data_plate --split val --device gpu:
   逐位字符准确率、按子集分层表；`--dump` 保存每个样本的预测，便于前后对比。
   `eval_e2e.py` 则跑**完整链路**（YOLO 检测 + 识别）并与 CCPD 文件名里的真值比对，
   可带 `--rec-url` 走远端微调模型、不带则走本地官方模型，用于 A/B。
-- 存档：`code/eval_reports/official_val.json`（基准线）、`finetuned_val.json`（微调裁剪图）、
-  `e2e_official-e2e.json` / `e2e_finetuned-e2e.json`（端到端 A/B）。
+- 本地评测明细可保存在 `code/eval_reports/`，该目录不纳入版本控制。
 
 ### 6.1 上线：拆成双服务（推荐做法）
 
 微调模型是 **PIR** 导出，只有 `paddle` 引擎能加载，而 `import paddle` 在 ML 环境会被 CUDA torch
 挡住（DLL 冲突）。因此拆成两个进程：检测留在 ML 环境（GPU torch），识别放进 `anpr-ocr`（GPU paddle），
-用一次 `start_anpr.bat` 拉起：
+用一次 `start_anpr.bat` 拉起。启动脚本中的两个 Python 路径是当前机器的示例，换机器时先修改 `PY_REC` 和 `PY_API`；两个环境分别需要 PaddleOCR/PaddleX/Paddle 与 YOLO/torch，均需要 FastAPI、Uvicorn，API 还需要 `python-multipart`：
 
 ```
 ┌───────────────────────────────┐       HTTP          ┌────────────────────────────────┐
@@ -254,7 +264,7 @@ E:\YOLO-Paddle-ANPR\start_anpr.bat     # 先启动识别服务并等它就绪，
 E:\YOLO-Paddle-ANPR\stop_anpr.bat      # 按端口精确停掉两个服务（含窗口）
 
 # 等价的手动启动
-E:\CondaEnvs\anpr-ocr\python.exe code\rec_service.py --model-dir code\output_plate\inference --port 8100
+E:\CondaEnvs\anpr-ocr\python.exe code\rec_service.py --model-dir models\recognition --port 8100
 E:\CondaEnvs\ML\python.exe       code\api_server.py  --port 8000 --rec-url http://127.0.0.1:8100
 ```
 
@@ -289,7 +299,9 @@ code/
   configs/plate_rec.yml   # 微调配置（上游 PP-OCRv6_small_rec.yml + 本项目数据与超参）
 PaddleOCR/                # 官方仓库克隆（tools/train.py、tools/export_model.py）
 rec_data_plate/           # 车牌识别数据集（40k train / 4k val 裁剪图）
-runs/ccpd_yolo/weights/   # 检测权重 best.pt
+models/detection/         # 已训练 YOLO 检测权重
+models/recognition/        # 已训练 PaddleOCR 推理模型
+runs/                     # 本地训练输出，不纳入版本控制
 ```
 
 ---
