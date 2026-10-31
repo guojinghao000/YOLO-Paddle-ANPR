@@ -11,12 +11,16 @@
 | `models/recognition/inference.pdiparams` | 微调后的识别权重 |
 | `models/recognition/inference.yml` | PaddleX 识别配置及字表 |
 
-识别模型为 Paddle PIR 格式，需使用 `paddle` 引擎；Windows 双服务部署可同时使用 GPU YOLO 和该模型。以下单进程快速开始默认使用官方 `transformers` 识别模型，使用本仓库的微调识别模型请按[双服务部署](#61-上线拆成双服务推荐做法)启动。
+识别模型为 Paddle PIR 格式，需使用 `paddle` 引擎。Windows 上的快速部署使用两个独立进程分别加载检测和识别模型，以避开 torch 与 paddle 的 DLL 冲突。
 
-```
-图像/视频帧 ─▶ YOLO 检测车牌框 ─▶ 裁剪(+5% 边距) ─▶ PaddleOCR 识别字符 ─▶ 字符规整/校验 ─▶ 车牌文本
-                                    │
-                                    └─▶ 服务端绘制标注图 (data URL) + 分段耗时
+```mermaid
+flowchart LR
+    image["图像 / 视频帧"] --> detect["YOLO 检测车牌框"]
+    detect --> crop["裁剪车牌<br/>增加 5% 边距"]
+    crop --> ocr["PaddleOCR 识别字符"]
+    ocr --> normalize["字符规整与车牌格式校验"]
+    normalize --> plate["车牌文本"]
+    normalize --> output["标注图与分段耗时"]
 ```
 
 两种使用方式：**HTTP API + Web 界面**（推荐）、**命令行单图识别**。
@@ -25,12 +29,24 @@
 
 ## 1. 快速开始：HTTP API + Web 界面
 
+### Windows 一键安装与启动
+
+需要 Windows x64、NVIDIA GPU 及兼容 CUDA 12.9 的驱动、[64 位 Python 3.11 和 Python Launcher](https://www.python.org/downloads/windows/)（安装时启用 `py` 启动器）以及可下载依赖的网络。模型随仓库提供，识别时无需下载数据集。
+
 ```powershell
-conda activate <你的环境，例如 ML>          # 需已装 paddleocr/paddlex/paddle
-cd code
-pip install -r requirements-web.txt          # fastapi / uvicorn / python-multipart
-python api_server.py --host 127.0.0.1 --port 8000
+git clone https://github.com/guojinghao000/YOLO-Paddle-ANPR.git
+cd YOLO-Paddle-ANPR
+.\setup_anpr.bat    # 首次运行：创建 .venv-api 和 .venv-rec，安装 GPU 依赖
+.\start_anpr.bat    # 等待识别服务就绪后启动 API
 ```
+
+首次安装会下载 CUDA 版 PyTorch、PaddlePaddle 等依赖，耗时和磁盘占用较大。之后直接运行 `start_anpr.bat` 即可；关闭服务窗口或运行 `stop_anpr.bat` 停止服务。默认两个服务均使用 GPU，安装完成时会检查两个环境是否检测到 GPU。安装失败时检查错误和网络后可重新运行安装脚本。
+
+如果 Python 3.11 没有注册到 `py` 启动器，可先设置 `$env:ANPR_SETUP_PYTHON = '完整的python.exe路径'`，再运行安装脚本。已有的 `.venv-api` 和 `.venv-rec` 会被复用；切换 Python 版本时应先自行备份并重建这两个环境。
+
+如果已有独立的 GPU 环境，可在运行 `start_anpr.bat` 前设置 `ANPR_PY_API` 和 `ANPR_PY_REC` 为各自的 Python 可执行文件，并按需要设置 `ANPR_DEVICE` 和 `REC_DEVICE`。脚本默认优先使用本地 `.venv-api` 和 `.venv-rec`；环境变量优先级更高。GPU 版本的 PyTorch 和 Paddle 需按各自环境及驱动单独安装，参见 [PyTorch 安装说明](https://pytorch.org/get-started/locally/)和 [PaddleOCR 安装说明](https://www.paddleocr.ai/latest/en/quick_start.html)。
+
+手动启动单进程 API 时，默认使用官方 `transformers` 识别模型；双服务启动使用仓库内的微调识别模型。单进程需要另行安装对应后端的依赖。
 
 打开 <http://127.0.0.1:8000>：
 
@@ -88,7 +104,7 @@ Saved annotated image to: img_result.jpg
 | `--rec-model-dir` | 自定义识别模型目录（PaddleX/PaddleOCR 推理导出：`inference.json` + `inference.pdiparams`；需与 `--ocr-version` 匹配，如 `PP-OCRv6_small`）。不指定则用官方预训练模型 |
 | `--conf` | 检测置信度阈值，默认 0.5 |
 | `--device` | `cpu` / `gpu` / `gpu:0` / `0`，默认自动 |
-| `--engine` | OCR 推理后端：`transformers`（默认，GPU，见 §5）或 `paddle`（PaddleX/PaddleOCR，Windows 上为 CPU）；可用 `ANPR_ENGINE` 覆盖。加载失败的组合会自动回退 |
+| `--engine` | OCR 推理后端：`transformers`（默认，见 §5）或 `paddle`；可用 `ANPR_ENGINE` 覆盖。GPU 是否可用取决于对应环境的安装 |
 | `--no-warmup` | 跳过启动预热校验 |
 | `--out` | 标注图输出路径（默认 `<name>_result.jpg`） |
 | `--show` | 显示结果窗口 |
@@ -157,7 +173,7 @@ curl -X POST http://127.0.0.1:8000/api/recognize \
 | `ANPR_REC_MODEL_DIR` | 自动探测 `code/output/*/inference` | 自定义识别模型目录（PaddleX/PaddleOCR 推理导出）；留空则用官方预训练模型 |
 | `ANPR_OCR_VERSION` | `PP-OCRv6_small` | 识别模型版本（见 `REC_MODEL_NAMES`） |
 | `ANPR_DEVICE` | `gpu`（服务）/ 自动（CLI） | 设备：`cpu` / `gpu` / `gpu:0` / `0` |
-| `ANPR_ENGINE` | `transformers` | OCR 推理后端：`transformers`（GPU，需 safetensors 模型，见 §5）或 `paddle`（PaddleX/PaddleOCR，Windows 上为 CPU） |
+| `ANPR_ENGINE` | `transformers` | 本地 OCR 推理后端：`transformers`（需 safetensors 模型，见 §5）或 `paddle` |
 | `ANPR_CONF` | `0.5` | 默认检测置信度 |
 | `ANPR_PRELOAD` | `1` | 启动即加载模型；`0` 为首次请求时懒加载 |
 | `ANPR_WARMUP` | `1` | 启动时用一张合成图**实跑一次**校验后端；`0` 跳过 |
@@ -169,8 +185,7 @@ curl -X POST http://127.0.0.1:8000/api/recognize \
 
 ## 5. GPU 推理（transformers 后端）
 
-Windows 上 `paddlepaddle` 3.x 没有 GPU wheel，若想让 OCR 走 GPU，可用 PaddleX 的
-`transformers` 后端（由 PyTorch/CUDA 驱动，需安装 `transformers`）：
+单进程模式可用 PaddleX 的 `transformers` 后端通过 PyTorch/CUDA 执行 OCR（需安装 `transformers`）：
 
 ```powershell
 python api_server.py --host 127.0.0.1 --port 8000 --engine transformers --device gpu
@@ -185,7 +200,7 @@ python api_server.py --host 127.0.0.1 --port 8000 --engine transformers --device
 
 - **想要 GPU**：引擎先用官方 `PP-OCRv6_small_rec` 跑 `transformers`，并在日志与 `/api/health`
   的 `notes` 中说明该目录无法被该后端加载；
-- **想要该目录里的模型**：引擎随后自动降级到 `paddle` 引擎加载它（Windows 上为 CPU）。
+- **想要该目录里的模型**：使用独立的 `paddle` 识别服务；在已安装 CUDA 版 PaddlePaddle 的环境中可运行于 GPU。单进程还需处理 torch 与 paddle 的 DLL 冲突。
 
 引擎启动时会对 `(engine, device)` 逐个组合实跑一次预热推理做校验，顺序为
 `transformers → paddle → cpu`，第一个成功的生效；失败原因逐条写入日志。
@@ -194,6 +209,12 @@ python api_server.py --host 127.0.0.1 --port 8000 --engine transformers --device
 ---
 
 ## 6. 识别模型微调（CCPD 车牌）
+
+### 数据集准备
+
+训练或评估时，从 [ModelScope 下载 CCPD2019.tar.xz](https://www.modelscope.cn/datasets/OmniData/CCPD/file/view/master/raw%2FCCPD2019.tar.xz?id=28364)，解压并整理到仓库根目录的 `CCPD2019/`。检查解压后目录包含 `ccpd_base/` 等图片子目录，以及 `splits/train.txt`、`splits/val.txt`、`splits/test.txt`；如果压缩包中有额外的外层目录，需调整目录层级。分割文件中的路径应相对于 `CCPD2019/`。数据集和压缩包不提交到 Git。
+
+YOLO 训练前，在配置好依赖的环境中从仓库根目录执行 `python code/process_dataset.py`，生成标签和 `dataset/data.yaml`。日常识别不需要这一步。
 
 官方 `PP-OCRv6_small_rec` 在 CCPD 车牌裁剪上整牌全对率为 **29.73%**
 （清晰子集 58.9%，blur / tilt / rotate 均不足 2%）。微调在 `anpr-ocr` 环境里做
@@ -248,24 +269,34 @@ python verify_rec_plate.py --dataset ..\rec_data_plate --split val --device gpu:
 
 微调模型是 **PIR** 导出，只有 `paddle` 引擎能加载，而 `import paddle` 在 ML 环境会被 CUDA torch
 挡住（DLL 冲突）。因此拆成两个进程：检测留在 ML 环境（GPU torch），识别放进 `anpr-ocr`（GPU paddle），
-用一次 `start_anpr.bat` 拉起。启动脚本中的两个 Python 路径是当前机器的示例，换机器时先修改 `PY_REC` 和 `PY_API`；两个环境分别需要 PaddleOCR/PaddleX/Paddle 与 YOLO/torch，均需要 FastAPI、Uvicorn，API 还需要 `python-multipart`：
+运行根目录的 `setup_anpr.bat` 创建 GPU 环境，再用 `start_anpr.bat` 拉起；已有环境也可通过 `ANPR_PY_REC`、`ANPR_PY_API` 指定。两个环境分别需要 PaddleOCR/PaddleX/Paddle 与 YOLO/torch，均需要 FastAPI、Uvicorn，API 还需要 `python-multipart`：
 
-```
-┌───────────────────────────────┐       HTTP          ┌────────────────────────────────┐
-│ ML 环境 (E:\CondaEnvs\ML)      │  POST /api/rec      │ anpr-ocr 环境                   │
-│ api_server.py         :8000   │ ──────────────────▶ │ rec_service.py       :8100     │
-│ YOLO 检测 (CUDA torch, GPU)    │  base64 车牌裁剪图   │ 微调 PP-OCRv6_small_rec (PIR)   │
-│ Web UI / REST                 │ ◀────────────────── │ paddle 引擎 (GPU)               │
-└───────────────────────────────┘    {text, score}    └────────────────────────────────┘
+```mermaid
+flowchart LR
+    client["Web 界面 / HTTP 客户端"]
+    subgraph detection["检测环境：.venv-api"]
+        api["api_server.py<br/>端口 8000"]
+        yolo["YOLO 检测<br/>PyTorch / GPU"]
+        api --> yolo
+    end
+    subgraph recognition["识别环境：.venv-rec"]
+        rec["rec_service.py<br/>端口 8100"]
+        model["微调 PP-OCRv6_small_rec<br/>Paddle PIR / GPU"]
+        rec --> model
+    end
+    client -->|"图片 / 视频帧"| api
+    yolo -->|"POST /api/rec<br/>车牌裁剪图"| rec
+    rec -->|"识别文本与置信度"| api
+    api -->|"识别结果 / 标注图"| client
 ```
 
 ```powershell
-E:\YOLO-Paddle-ANPR\start_anpr.bat     # 先启动识别服务并等它就绪，再启动 API
-E:\YOLO-Paddle-ANPR\stop_anpr.bat      # 按端口精确停掉两个服务（含窗口）
+.\start_anpr.bat     # 先启动识别服务并等它就绪，再启动 API
+.\stop_anpr.bat      # 停止当前项目的服务进程；剩余窗口可手动关闭
 
 # 等价的手动启动
-E:\CondaEnvs\anpr-ocr\python.exe code\rec_service.py --model-dir models\recognition --port 8100
-E:\CondaEnvs\ML\python.exe       code\api_server.py  --port 8000 --rec-url http://127.0.0.1:8100
+.\.venv-rec\Scripts\python.exe code\rec_service.py --device gpu:0 --model-dir models\recognition --port 8100
+.\.venv-api\Scripts\python.exe code\api_server.py --device gpu --port 8000 --rec-url http://127.0.0.1:8100
 ```
 
 - **识别服务接口**：`GET /health`；`POST /api/rec`
@@ -331,11 +362,9 @@ runs/                     # 本地训练输出，不纳入版本控制
 - 识别走 PaddleOCR 的独立识别模块 `TextRecognition`（不是 `PaddleOCR` 流水线），
   每个 YOLO 裁剪图只跑一次识别、不再重复检测；该模块解码为空时返回的 `rec_score`
   是 `nan`，引擎已归一化为 `0.0`（JSON 不允许 NaN）。
-- 首次运行会联网下载官方模型到 `~/.paddlex/official_models`（`transformers` 后端则下载
-  `*_safetensors`）。`ANPR_REC_MODEL_DIR` 只替换识别模型，检测模型仍是官方默认。
-- Windows 上 paddle 3.x 无 GPU wheel，`paddle` 引擎只能跑 CPU；并且若环境里的 torch 带 CUDA，
-  `import paddle` 会直接失败（`cublas64_12.dll` / WinError 127），此时 `paddle` 的所有组合都不可用 →
-  用默认的 `transformers` 引擎（GPU + 官方 safetensors 模型，见 §5）即可，`transformers` 全程不 import paddle。
+- 使用官方识别模型时首次运行可能联网下载到 `~/.paddlex/official_models`（`transformers` 后端下载
+  `*_safetensors`）。`ANPR_REC_MODEL_DIR` 只影响识别模型；检测模型默认使用仓库内的微调 YOLO 权重。
+- Windows 上 CUDA 版 torch 与 paddle 在同一进程中可能发生 DLL 冲突。推荐分别使用 `.venv-api` 和 `.venv-rec`，通过双服务模式在 GPU 上运行已训练模型。
 - 浏览器调用摄像头需要 HTTPS 或 localhost（本机 `http://127.0.0.1:8000` 满足）。
 - 不要在 `import paddle` 之后再 import torch（DLL 搜索路径冲突会崩 torch）：
   `anpr_engine.py` 已按 `ultralytics → paddleocr` 的顺序导入，其他模块请勿打乱。
@@ -350,7 +379,7 @@ runs/                     # 本地训练输出，不纳入版本控制
 | `paddleocr` / `paddlex` 导入失败（`OSError`、`PDX has already been initialized`） | 只影响 `paddle` 引擎：环境里的 torch 带 CUDA 时，`import paddle` 会因 `cublas64_12.dll`（WinError 127）失败，`paddle` 的所有组合都不可用；而 `transformers` 引擎全程不 import paddle，照常可用（服务与 CLI 默认就是它）。确实需要 `paddle` 引擎时，在干净进程里验证 `python -c "import paddleocr, paddlex"` 并补齐依赖，且不要在 `import paddle` 之后再 import torch（见「已知限制」的 DLL 冲突条目） |
 | `RuntimeError: PDX has already been initialized` | 同一进程里 paddlex 被重复导入，或上一次初始化失败留下的半初始化状态（常与 DLL 冲突同源）：重启服务进程重试，并保持 `anpr_engine.py` 的导入顺序（`ultralytics → paddleocr`）不被改动 |
 | `[Errno 11001] getaddrinfo failed` 后服务退出 | 把端口写进了 host（如 `--host 127.0.0.1:8000`）。现已自动拆分；规范写法是 `--host 127.0.0.1 --port 8000` |
-| `ValueError: No valid model files were found for engine 'transformers'` | 该后端只吃 safetensors/HF 模型，而 `ANPR_REC_MODEL_DIR` 指向的是 PIR 导出（`inference.json` + `inference.pdiparams`）。引擎会改用官方识别模型（GPU）；要用那个目录就设 `--engine paddle`（Windows 上为 CPU） |
+| `ValueError: No valid model files were found for engine 'transformers'` | 该后端只支持 safetensors/HF 模型，而 `ANPR_REC_MODEL_DIR` 指向 PIR 导出。使用双服务模式，在独立的 Paddle GPU 环境加载仓库模型。 |
 | 卡片提示「未能识别字符」/ 识别置信度 0% | 车牌过小或模糊，超出官方 `PP-OCRv6_small_rec` 的能力：先降低检测阈值确认裁剪图质量，或换 `--ocr-version PP-OCRv6`（更重的识别模型）对照 |
 | 改了 `web/index.html` 但界面没变化 | 浏览器缓存：`Ctrl+F5` 强制刷新；服务端无需重启（静态文件） |
 | 首次启动很慢 | 需要下载官方模型 + 加载权重 + 预热校验，属正常；可用 `ANPR_PRELOAD=0` 改为首次请求加载 |

@@ -1,0 +1,9 @@
+# Separate environment: do not install torch alongside Paddle on Windows.
+numpy==1.26.4
+# CUDA PaddlePaddle is installed from its official index by setup_anpr.bat.
+paddleocr==3.7.0
+paddlex==3.7.2
+opencv-python==4.10.0.84
+Pillow
+fastapi==0.141.1
+uvicorn[standard]==0.53.0

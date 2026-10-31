@@ -5,7 +5,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from paddle_tools import Stringparsing, parse_coord_str
+from tools import Stringparsing, parse_coord_str
 
 CCPD_ROOT = Path(__file__).resolve().parents[1] / "CCPD2019"
 DATASET_DIR = Path(__file__).resolve().parents[1] / "dataset"

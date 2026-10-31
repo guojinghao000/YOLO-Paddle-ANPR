@@ -1,25 +1,20 @@
 @echo off
 REM ---------------------------------------------------------------------------
 REM  Stop both ANPR services started by start_anpr.bat.
-REM  Kills whatever listens on the API / recognition ports, plus any shell whose
-REM  command line mentions our two service scripts (closes their windows too).
+REM  Stops only Python processes running this checkout's service scripts.
 REM ---------------------------------------------------------------------------
 setlocal
-set "API_PORT=8000"
-set "REC_PORT=8100"
+set "ANPR_STOP_ROOT=%~dp0"
 
 echo Stopping ANPR services ...
 
-for %%P in (%REC_PORT% %API_PORT%) do (
-  for /f "tokens=5" %%I in ('netstat -ano ^| findstr /r /c:"LISTENING" ^| findstr ":%%P "') do (
-    if not "%%I"=="0" (
-      echo   port %%P ^-^> PID %%I
-      taskkill /F /T /PID %%I >nul 2>&1
-    )
-  )
+powershell -NoProfile -Command "$api = Join-Path $env:ANPR_STOP_ROOT 'code\api_server.py'; $rec = Join-Path $env:ANPR_STOP_ROOT 'code\rec_service.py'; Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object { $_.Name -match '^python(w)?\.exe$' -and $_.CommandLine -and ($_.CommandLine.IndexOf($api, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf($rec, [StringComparison]::OrdinalIgnoreCase) -ge 0) } | ForEach-Object { Write-Host ('  stopping PID ' + $_.ProcessId); Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop }"
+if errorlevel 1 (
+  echo [ERROR] Could not stop the services. Close the ANPR service windows manually.
+  pause
+  exit /b 1
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'rec_service\.py|api_server\.py' } | ForEach-Object { Write-Host ('  closing ' + $_.Name + ' PID ' + $_.ProcessId); Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
-
-echo Done.
+echo Done. Close any remaining ANPR service windows manually.
+pause
 endlocal

@@ -1,5 +1,6 @@
 # Local datasets and generated image lists
 /CCPD2019/
+/CCPD2019.tar.xz
 /dataset/
 /rec_data_plate/
 /rec_data_preview/
@@ -25,3 +26,6 @@ __pycache__/
 .ipynb_checkpoints/
 .venv/
 /.doc-work/
+/build/
+/.venv-api/
+/.venv-rec/
